@@ -1,33 +1,33 @@
-# ==========================================
-# Admin-Toolkit für Windows
+﻿# ==========================================
+# Admin-Toolkit für Windows (bereinigt & vollständig)
 # ==========================================
 
-# Prüfung auf Administratorrechte
+# --- Admin-Check ---
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Warning "Dieses Skript erfordert Administratorrechte. Bitte als Administrator ausfuehren."
     exit
 }
 
-# Konsolen-Encoding auf UTF-8
-try { 
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 
-} catch { 
-    Write-Warning "Fehler beim Setzen des Encodings: $($_.Exception.Message)" 
+# --- UTF-8 Konsolen-Encoding ---
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+    Write-Warning "Fehler beim Setzen des Encodings: $($_.Exception.Message)"
 }
 
-# Desktop/Log-Verzeichnis
+# --- Logs/Ordner ---
 $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $LogRoot = Join-Path $DesktopPath "AdminLogs"
 if (!(Test-Path $LogRoot)) { New-Item -ItemType Directory -Path $LogRoot | Out-Null }
 
 # --------------------------
-# Sysinternals Suite (Auto-Download & Start)
+# Sysinternals Suite
 # --------------------------
 $SysinternalsPath = "C:\Tools\Sysinternals"
 $SysinternalsZip  = Join-Path $env:TEMP "SysinternalsSuite.zip"
 $SysinternalsUrl  = "https://download.sysinternals.com/files/SysinternalsSuite.zip"
 
-function Ensure-Sysinternals {
+function Install-Sysinternals {
     if (-not (Test-Path $SysinternalsPath)) {
         Write-Host "Sysinternals Suite wird heruntergeladen..." -ForegroundColor Yellow
         try {
@@ -42,8 +42,8 @@ function Ensure-Sysinternals {
 }
 
 function Start-SysinternalTool {
-    param([Parameter(Mandatory=$true)][string]$ExeName)
-    Ensure-Sysinternals
+    param([Parameter(Mandatory = $true)][string]$ExeName)
+    Install-Sysinternals
     $exe = Join-Path $SysinternalsPath $ExeName
     if (Test-Path $exe) {
         Start-Process $exe
@@ -53,7 +53,7 @@ function Start-SysinternalTool {
 }
 
 # --------------------------
-# Wetter (Originalfunktion)
+# Wetter
 # --------------------------
 function Get-Weather {
     try {
@@ -68,7 +68,6 @@ function Get-Weather {
         $temp = $w.current_weather.temperature
         $wind = $w.current_weather.windspeed
 
-        # Regenwahrscheinlichkeit zur aktuellen Stunde
         $nowIso = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:00")
         $idx = ($w.hourly.time).IndexOf($nowIso)
         if ($idx -lt 0) { $idx = 0 }
@@ -78,8 +77,7 @@ function Get-Weather {
         Write-Host ("Temperatur: {0} °C" -f $temp)
         Write-Host ("Windgeschwindigkeit: {0} km/h" -f $wind)
         Write-Host ("Regenwahrscheinlichkeit: {0} %" -f $rain)
-    }
-    catch {
+    } catch {
         Write-Warning "Wetterabfrage uebersprungen: $($_.Exception.Message)"
         Write-Host "Hinweis: Wetterinformationen sind nur bei Internetverbindung verfuegbar" -ForegroundColor Yellow
     }
@@ -98,8 +96,8 @@ function Show-SystemInfo {
 
         $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" |
             Select-Object DeviceID,
-                          @{n="Kapazitaet(GB)";e={[math]::Round($_.Size/1GB,2)}},
-                          @{n="Frei(GB)";e={[math]::Round($_.FreeSpace/1GB,2)}}
+                          @{n = "Kapazitaet(GB)"; e = {[math]::Round($_.Size / 1GB, 2)}},
+                          @{n = "Frei(GB)"; e = {[math]::Round($_.FreeSpace / 1GB, 2)}}
 
         Write-Host ("Hostname: {0}" -f $cs.Name)
         Write-Host ("OS: {0} {1}" -f $os.Caption, $os.Version)
@@ -107,14 +105,13 @@ function Show-SystemInfo {
         Write-Host ("Arbeitsspeicher: {0} GB" -f $ramGB)
         Write-Host "Festplatten:"
         $disks | Format-Table -AutoSize
-    }
-    catch {
+    } catch {
         Write-Warning "Fehler beim Auslesen der Systeminformationen: $($_.Exception.Message)"
     }
 }
 
 # --------------------------
-# Netzwerk & Dienste pruefen (Originalfunktion)
+# Netzwerk & Dienste prüfen
 # --------------------------
 function Test-NetworkAndServices {
     Write-Host "`n=== Netzwerk und Dienste pruefen ===" -ForegroundColor Cyan
@@ -132,34 +129,25 @@ function Test-NetworkAndServices {
         if ($gw) {
             Write-Host ("`nPing Gateway {0} ..." -f $gw)
             $pingResult = Test-Connection -ComputerName $gw -Count 2 -ErrorAction SilentlyContinue
-            if ($pingResult) {
-                Write-Host "Gateway erreichbar" -ForegroundColor Green
-            } else {
-                Write-Warning "Gateway nicht erreichbar"
-            }
+            if ($pingResult) { Write-Host "Gateway erreichbar" -ForegroundColor Green } else { Write-Warning "Gateway nicht erreichbar" }
         } else {
             Write-Warning "Kein Gateway gefunden"
         }
-        
+
         Write-Host "`nPing Internet (8.8.8.8) ..."
-        try { 
+        try {
             $internetResult = Test-Connection -ComputerName 8.8.8.8 -Count 2 -ErrorAction Stop
-            if ($internetResult) {
-                Write-Host "Internet: OK" -ForegroundColor Green 
-            }
-        } catch { 
-            Write-Warning "Internet: nicht erreichbar" 
-        }
-    }
-    catch {
+            if ($internetResult) { Write-Host "Internet: OK" -ForegroundColor Green }
+        } catch { Write-Warning "Internet: nicht erreichbar" }
+    } catch {
         Write-Warning "Fehler beim Netzwerk-Check: $($_.Exception.Message)"
     }
 }
 
 # --------------------------
-# Updates (Windows + Apps) (Originalfunktion)
+# Updates (Windows + Apps)
 # --------------------------
-function Run-Updates {
+function Invoke-Updates {
     Write-Host "`n=== Windows Updates ===" -ForegroundColor Cyan
     try {
         if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
@@ -167,11 +155,11 @@ function Run-Updates {
             Install-Module PSWindowsUpdate -Scope CurrentUser -Force -Confirm:$false -ErrorAction Stop
         }
         Import-Module PSWindowsUpdate -Force -ErrorAction Stop
-        
+
         Write-Host "Suche nach Windows Updates..."
         $updates = Get-WUList -ErrorAction Stop
         if ($updates) {
-            Write-Host "$($updates.Count) Updates verfuegbar. Installation wird gestartet..."
+            Write-Host ("{0} Updates verfuegbar. Installation wird gestartet..." -f $updates.Count)
             Install-WindowsUpdate -AcceptAll -AutoReboot:$false -ErrorAction Stop
             Write-Host "Updates installiert. Neustart moeglicherweise erforderlich." -ForegroundColor Green
         } else {
@@ -182,18 +170,17 @@ function Run-Updates {
     }
 
     Write-Host "`n=== Anwendungsupdates (winget) ===" -ForegroundColor Cyan
-    try { 
+    try {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             winget upgrade --all --accept-package-agreements --accept-source-agreements
         } else {
             Write-Warning "winget nicht gefunden. Installieren Sie winget von https://github.com/microsoft/winget-cli"
         }
-    }
-    catch { Write-Warning "winget-Update fehlgeschlagen: $($_.Exception.Message)" }
+    } catch { Write-Warning "winget-Update fehlgeschlagen: $($_.Exception.Message)" }
 }
 
 # --------------------------
-# Fehleranalyse (Originalfunktion)
+# Fehleranalyse
 # --------------------------
 function Show-SystemErrors {
     Write-Host "`n=== Letzte Systemfehler ===" -ForegroundColor Cyan
@@ -201,35 +188,28 @@ function Show-SystemErrors {
         $errorEvents = Get-EventLog -LogName System -EntryType Error -Newest 10 -ErrorAction SilentlyContinue
         if ($errorEvents) {
             $errorEvents | Select-Object TimeGenerated, Source, EventID, Message | Format-Table -AutoSize -Wrap
-        } else {
-            Write-Host "Keine Fehlerereignisse in den letzten Eintraegen gefunden." -ForegroundColor Green
-        }
-        
+        } else { Write-Host "Keine Fehlerereignisse gefunden." -ForegroundColor Green }
+
         Write-Host "`n=== Letzte Warnungen ==="
         $warningEvents = Get-EventLog -LogName System -EntryType Warning -Newest 10 -ErrorAction SilentlyContinue
         if ($warningEvents) {
             $warningEvents | Select-Object TimeGenerated, Source, EventID, Message | Format-Table -AutoSize -Wrap
-        } else {
-            Write-Host "Keine Warnereignisse in den letzten Eintraegen gefunden." -ForegroundColor Green
-        }
-    }
-    catch {
+        } else { Write-Host "Keine Warnereignisse gefunden." -ForegroundColor Green }
+    } catch {
         Write-Warning "Eventlogs konnten nicht gelesen werden: $($_.Exception.Message)"
         Write-Host "Hinweis: Fuehren Sie das Skript als Administrator aus, um Eventlogs zu lesen." -ForegroundColor Yellow
     }
 }
 
 # --------------------------
-# IP-Konfiguration setzen (Originalfunktion)
+# IP-Konfiguration setzen
 # --------------------------
 function Set-NetworkConfig {
     Write-Host "`n=== IP-Konfiguration setzen ===" -ForegroundColor Cyan
 
-    # Aktive Netzwerkadapter ermitteln
     $adapters = Get-NetAdapter | Where-Object Status -eq "Up"
     if (-not $adapters) { Write-Warning "Keine aktiven Netzwerkadapter gefunden."; return }
 
-    # Adapter auflisten mit Name, Status, Geschwindigkeit, aktueller IPv4-Adresse und Domäne
     Write-Host "`nVerfuegbare Netzwerkadapter:"
     $i = 1
     $adapterInfoList = @()
@@ -243,65 +223,41 @@ function Set-NetworkConfig {
         $i++
     }
 
-    # Adapter auswählen
     $sel = Read-Host "`n Adapterauswahl (Nummer)"
-    if (-not ($sel -match '^\d+$') -or $sel -lt 1 -or $sel -gt $adapterInfoList.Count) {
-        Write-Warning "Unpassende Auswahl."; return
-    }
+    if (-not ($sel -match '^\d+$') -or $sel -lt 1 -or $sel -gt $adapterInfoList.Count) { Write-Warning "Unpassende Auswahl."; return }
     $adapter = $adapterInfoList[$sel - 1]
 
-    # Aktuelle IP, Gateway und DNS abrufen
     $currentIP = (Get-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress
     $currentPrefix = (Get-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).PrefixLength
     $currentGW = (Get-NetRoute -InterfaceIndex $adapter.ifIndex -DestinationPrefix "0.0.0.0/0" | Select-Object -First 1).NextHop
     $currentDNS = (Get-DnsClientServerAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4).ServerAddresses
 
-    # Neue Konfiguration abfragen, Standardwerte mit aktuellen Werten füllen
     $ip = Read-Host ("Statische IP [{0}]" -f (if ($currentIP) { $currentIP } else { "leer" }))
     $prefix = Read-Host ("PrefixLength [{0}]" -f (if ($currentPrefix) { $currentPrefix } else { "24" }))
     $gateway = Read-Host ("Standardgateway [{0}]" -f (if ($currentGW) { $currentGW } else { "leer" }))
     $dns1 = Read-Host ("Primärer DNS [{0}]" -f (if ($currentDNS[0]) { $currentDNS[0] } else { "leer" }))
     $dns2 = Read-Host ("Sekundärer DNS [{0}] (Enter zum Überspringen)" -f (if ($currentDNS[1]) { $currentDNS[1] } else { "leer" }))
 
-    # Wenn Eingabe leer bleibt, aktuellen Wert verwenden
     if (-not $ip) { $ip = $currentIP }
     if (-not $prefix) { $prefix = $currentPrefix }
     if (-not $gateway) { $gateway = $currentGW }
     if (-not $dns1) { $dns1 = $currentDNS[0] }
     if (-not $dns2) { $dns2 = $currentDNS[1] }
 
-    # Bestätigung einholen
     Write-Host "`nFolgende Konfiguration wird angewendet:"
     Write-Host "IP: $ip/$prefix"
     Write-Host "Gateway: $gateway"
-    Write-Host "DNS: $dns1" + $(if ($dns2) { ", $dns2" } else { "" })
+    if ($dns2) { Write-Host "DNS: $dns1, $dns2" } else { Write-Host "DNS: $dns1" }
     $confirm = Read-Host "Fortfahren? (J/N)"
-    if ($confirm -notmatch "^[jJ]") {
-        Write-Host "Abgebrochen." -ForegroundColor Yellow
-        return
-    }
+    if ($confirm -notmatch "^[jJ]") { Write-Host "Abgebrochen." -ForegroundColor Yellow; return }
 
     try {
-        # Alte IP-Adressen entfernen (nur wenn sich die IP ändert)
-        if ($currentIP -and $currentIP -ne $ip) {
-            Remove-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
-        }
+        if ($currentIP -and $currentIP -ne $ip) { Remove-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue }
+        if ($currentGW -and $currentGW -ne $gateway) { Remove-NetRoute -InterfaceAlias $adapter.Name -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue }
 
-        # Alte Route entfernen (nur wenn sich das Gateway ändert)
-        if ($currentGW -and $currentGW -ne $gateway) {
-            Remove-NetRoute -InterfaceAlias $adapter.Name -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
-        }
+        if ($ip -and $prefix) { New-NetIPAddress -InterfaceAlias $adapter.Name -IPAddress $ip -PrefixLength ([int]$prefix) -ErrorAction Stop | Out-Null }
+        if ($gateway) { New-NetRoute -InterfaceAlias $adapter.Name -AddressFamily IPv4 -NextHop $gateway -DestinationPrefix "0.0.0.0/0" -ErrorAction Stop | Out-Null }
 
-        # Neue IP-Adresse und Gateway setzen
-        if ($ip -and $prefix) {
-            New-NetIPAddress -InterfaceAlias $adapter.Name -IPAddress $ip -PrefixLength ([int]$prefix) -ErrorAction Stop | Out-Null
-        }
-        
-        if ($gateway) {
-            New-NetRoute -InterfaceAlias $adapter.Name -AddressFamily IPv4 -NextHop $gateway -DestinationPrefix "0.0.0.0/0" -ErrorAction Stop | Out-Null
-        }
-
-        # DNS-Server setzen
         if ($dns1) {
             $dnsServers = @($dns1)
             if ($dns2) { $dnsServers += $dns2 }
@@ -309,31 +265,24 @@ function Set-NetworkConfig {
         }
 
         Write-Host "IP-Konfiguration erfolgreich gesetzt." -ForegroundColor Green
-        
-        # Neue Konfiguration anzeigen
         Write-Host "`nAktuelle Konfiguration:"
         Get-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 | Format-Table
         Get-DnsClientServerAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 | Format-Table
-        
+
     } catch {
         Write-Warning "Fehler beim Setzen der IP-Konfiguration: $($_.Exception.Message)"
     }
 }
+
 # --------------------------
-# VLAN-Konfiguration (KORRIGIERTE Funktion)
+# VLAN-Konfiguration
 # --------------------------
 function Set-VlanTag {
     Write-Host "`n=== VLAN-Konfiguration ===" -ForegroundColor Cyan
-
     try {
-        # Aktive Netzwerkadapter ermitteln
         $adapters = Get-NetAdapter | Where-Object Status -eq "Up"
-        if (-not $adapters) { 
-            Write-Warning "Keine aktiven Netzwerkadapter gefunden."
-            return 
-        }
+        if (-not $adapters) { Write-Warning "Keine aktiven Netzwerkadapter gefunden."; return }
 
-        # Adapter auflisten
         Write-Host "`nVerfuegbare Netzwerkadapter:"
         $i = 1
         $adapterInfoList = @()
@@ -343,199 +292,117 @@ function Set-VlanTag {
             $i++
         }
 
-        # Adapter auswählen
         $sel = Read-Host "`n Adapterauswahl (Nummer)"
-        if (-not ($sel -match '^\d+$') -or $sel -lt 1 -or $sel -gt $adapterInfoList.Count) {
-            Write-Warning "Unpassende Auswahl."
-            return
-        }
+        if (-not ($sel -match '^\d+$') -or $sel -lt 1 -or $sel -gt $adapterInfoList.Count) { Write-Warning "Unpassende Auswahl."; return }
         $adapter = $adapterInfoList[$sel - 1]
 
-        # VLAN-ID abfragen
         $vlanId = Read-Host "VLAN-ID (z.B. 100)"
-        if (-not $vlanId -or -not ($vlanId -match '^\d+$')) {
-            Write-Warning "Ungueltige VLAN-ID"
-            return
-        }
+        if (-not $vlanId -or -not ($vlanId -match '^\d+$')) { Write-Warning "Ungueltige VLAN-ID"; return }
 
-        # Prüfen, ob VLAN unterstützt wird
         $vlanProperty = Get-NetAdapterAdvancedProperty -Name $adapter.Name | Where-Object { $_.DisplayName -match "VLAN" }
+        if (-not $vlanProperty) { Write-Warning "Adapter '$($adapter.Name)' unterstützt keine VLAN-Konfiguration."; return }
 
-        if (-not $vlanProperty) {
-            Write-Warning "Adapter '$($adapter.Name)' unterstützt keine VLAN-Konfiguration."
-            return
-        }
+        Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName $vlanProperty.DisplayName -DisplayValue $vlanId -ErrorAction Stop
+        Write-Host "VLAN $vlanId erfolgreich auf '$($adapter.Name)' gesetzt." -ForegroundColor Green
 
-        # VLAN setzen mit Fehlerbehandlung
-        try {
-            Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName $vlanProperty.DisplayName -DisplayValue $vlanId
-            Write-Host "VLAN $vlanId erfolgreich auf '$($adapter.Name)' gesetzt." -ForegroundColor Green
+        $restart = Read-Host "Adapter neu starten für die Änderungen? (J/N)"
+        if ($restart -match "^[jJ]") { Restart-NetAdapter -Name $adapter.Name -Confirm:$false; Write-Host "Adapter wurde neu gestartet." -ForegroundColor Green }
 
-            # Neustart des Adapters vorschlagen
-            $restart = Read-Host "Adapter neu starten für die Änderungen? (J/N)"
-            if ($restart -match "^[jJ]") {
-                Restart-NetAdapter -Name $adapter.Name -Confirm:$false
-                Write-Host "Adapter wurde neu gestartet." -ForegroundColor Green
-            }
-        }
-        catch {
-            Write-Warning "Fehler beim Setzen des VLAN: $($_.Exception.Message)"
-        }
-    } catch {
-        Write-Warning "Fehler in Set-VlanTag: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "Fehler in Set-VlanTag: $($_.Exception.Message)" }
 }
+
 # --------------------------
-# Netzwerkadapter mit Details anzeigen
+# Netzwerkadapter anzeigen
 # --------------------------
 function Show-NetworkAdapters {
     Write-Host "`n=== Netzwerkadapter mit Details ===" -ForegroundColor Cyan
-    
     $adapters = Get-NetAdapter | Where-Object Status -eq "Up"
-    if (-not $adapters) {
-        Write-Warning "Keine aktiven Netzwerkadapter gefunden."
-        return
-    }
+    if (-not $adapters) { Write-Warning "Keine aktiven Netzwerkadapter gefunden."; return }
 
     foreach ($adapter in $adapters) {
         Write-Host "`nAdapter: $($adapter.Name)" -ForegroundColor Yellow
         Write-Host "Status: $($adapter.Status)"
         Write-Host "Geschwindigkeit: $($adapter.LinkSpeed)"
-        
-        # IP-Konfiguration
+
         $ipConfig = Get-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue
-        if ($ipConfig) {
-            Write-Host "IP-Adresse: $($ipConfig.IPAddress)/$($ipConfig.PrefixLength)"
-        } else {
-            Write-Host "IP-Adresse: Keine IPv4-Konfiguration"
-        }
-        
-        # Gateway
+        if ($ipConfig) { Write-Host "IP-Adresse: $($ipConfig.IPAddress)/$($ipConfig.PrefixLength)" } else { Write-Host "IP-Adresse: Keine IPv4-Konfiguration" }
+
         $gateway = Get-NetRoute -InterfaceIndex $adapter.ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($gateway) {
-            Write-Host "Gateway: $($gateway.NextHop)"
-        }
-        
-        # DNS-Server
+        if ($gateway) { Write-Host "Gateway: $($gateway.NextHop)" }
+
         $dnsServers = Get-DnsClientServerAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue
-        if ($dnsServers -and $dnsServers.ServerAddresses) {
-            Write-Host "DNS-Server: $($dnsServers.ServerAddresses -join ', ')"
-        }
-        
-        Write-Host "-" * 50
+        if ($dnsServers -and $dnsServers.ServerAddresses) { Write-Host "DNS-Server: $($dnsServers.ServerAddresses -join ', ')" }
+        Write-Host ("-" * 50)
     }
 }
 
 # --------------------------
-# Drucker im Netzwerk suchen und installieren
+# Drucker installieren nach Raum
 # --------------------------
 function Install-PrinterByRoom {
     Write-Host "`n=== Drucker Installation ===" -ForegroundColor Cyan
-    
+
     $roomNumber = Read-Host "Bitte geben Sie die Raumnummer ein (z.B. 190)"
-    if (-not $roomNumber -or -not ($roomNumber -match '^\d+$')) {
-        Write-Warning "Ungueltige Raumnummer"
-        Pause
-        return
-    }
-    
+    if (-not $roomNumber -or -not ($roomNumber -match '^\d+$')) { Write-Warning "Ungueltige Raumnummer"; Pause; return }
+
     $networkRange = "192.168.$roomNumber.*"
     Write-Host "`nSuche nach Druckern im Bereich: $networkRange" -ForegroundColor Yellow
-    
-    # Liste möglicher Drucker-IPs im Raum
-    $possiblePrinters = @()
-    for ($i = 1; $i -le 254; $i++) {
-        $possiblePrinters += "192.168.$roomNumber.$i"
-    }
-    
+
+    $possiblePrinters = for ($i = 1; $i -le 254; $i++) { "192.168.$roomNumber.$i" }
     Write-Host "Scanne nach Druckern... Dies kann einen Moment dauern." -ForegroundColor Yellow
-    
-    $foundPrinters = @()
+
+    $foundPrinters = New-Object System.Collections.ArrayList
     $counter = 0
-    
+
     foreach ($printerIP in $possiblePrinters) {
         $counter++
         Write-Progress -Activity "Netzwerkscan" -Status "Prüfe $printerIP" -PercentComplete (($counter / 254) * 100)
-        
-        # Prüfen ob Port 9100 (Druckerport) offen ist
+
         $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $asyncResult = $tcpClient.BeginConnect($printerIP, 9100, $null, $null)
-        $wait = $asyncResult.AsyncWaitHandle.WaitOne(100, $false)
-        
-        if ($wait -and $tcpClient.Connected) {
-            $tcpClient.EndConnect($asyncResult)
-            $tcpClient.Close()
-            
-            # Versuchen, Druckernamen zu ermitteln
-            $printerName = "Drucker_Raum_${roomNumber}_$($printerIP.Split('.')[-1])"
-            $foundPrinters += [PSCustomObject]@{
-                IP = $printerIP
-                Name = $printerName
-                Port = 9100
+        try {
+            $asyncResult = $tcpClient.BeginConnect($printerIP, 9100, $null, $null)
+            $wait = $asyncResult.AsyncWaitHandle.WaitOne(100, $false)
+            if ($wait -and $tcpClient.Connected) {
+                $tcpClient.EndConnect($asyncResult)
+                $printerName = "Drucker_Raum_${roomNumber}_$($printerIP.Split('.')[-1])"
+                [void]$foundPrinters.Add([PSCustomObject]@{ IP = $printerIP; Name = $printerName; Port = 9100 })
             }
-        }
-        $tcpClient.Close()
+        } catch { }
+        finally { $tcpClient.Close() }
     }
-    
+
     Write-Progress -Activity "Netzwerkscan" -Completed
-    
-    if ($foundPrinters.Count -eq 0) {
-        Write-Warning "Keine Drucker im Netzwerkbereich $networkRange gefunden."
-        Pause
-        return
-    }
-    
-    # Gefundene Drucker anzeigen
+
+    if ($foundPrinters.Count -eq 0) { Write-Warning "Keine Drucker im Netzwerkbereich $networkRange gefunden."; Pause; return }
+
     Write-Host "`nGefundene Drucker:" -ForegroundColor Green
-    for ($i = 0; $i -lt $foundPrinters.Count; $i++) {
-        Write-Host "$($i+1): $($foundPrinters[$i].IP) - $($foundPrinters[$i].Name)"
-    }
-    
-    # Drucker auswählen
+    for ($i = 0; $i -lt $foundPrinters.Count; $i++) { Write-Host ("{0}: {1} - {2}" -f ($i + 1), $foundPrinters[$i].IP, $foundPrinters[$i].Name) }
+
     $printerChoice = Read-Host "`nWelchen Drucker moechten Sie installieren? (Nummer)"
-    if (-not ($printerChoice -match '^\d+$') -or $printerChoice -lt 1 -or $printerChoice -gt $foundPrinters.Count) {
-        Write-Warning "Ungueltige Auswahl"
-        Pause
-        return
-    }
-    
+    if (-not ($printerChoice -match '^\d+$') -or $printerChoice -lt 1 -or $printerChoice -gt $foundPrinters.Count) { Write-Warning "Ungueltige Auswahl"; Pause; return }
+
     $selectedPrinter = $foundPrinters[$printerChoice - 1]
-    
+
     Write-Host "`nDrucker wird konfiguriert:"
     Write-Host "IP-Adresse: $($selectedPrinter.IP)"
     Write-Host "Name: $($selectedPrinter.Name)"
-    
+
     $confirm = Read-Host "Fortfahren? (J/N)"
-    if ($confirm -notmatch "^[jJ]") {
-        Write-Host "Abgebrochen" -ForegroundColor Yellow
-        Pause
-        return
-    }
-    
+    if ($confirm -notmatch "^[jJ]") { Write-Host "Abgebrochen" -ForegroundColor Yellow; Pause; return }
+
     try {
-        # Druckerport erstellen
         Add-PrinterPort -Name $selectedPrinter.IP -PrinterHostAddress $selectedPrinter.IP -ErrorAction Stop
-        
-        # Drucker installieren (mit generischem Treiber)
         Add-Printer -Name $selectedPrinter.Name -PortName $selectedPrinter.IP -DriverName "Generic / Text Only" -ErrorAction Stop
-        
         Write-Host "Drucker erfolgreich installiert: $($selectedPrinter.Name)" -ForegroundColor Green
-        Write-Host "IP: $($selectedPrinter.IP)" -ForegroundColor Green
-    }
-    catch {
-        Write-Warning "Fehler bei der Druckerinstallation: $($_.Exception.Message)"
-    }
-    
+    } catch { Write-Warning "Fehler bei der Druckerinstallation: $($_.Exception.Message)" }
+
     Pause
 }
 
 # --------------------------
-# Hilfsfunktion für Pause
+# Hilfsfunktion Pause
 # --------------------------
-function Pause {
-    Write-Host "`nDrücken Sie eine Taste, um fortzufahren..."
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-}
+function Pause { Write-Host "`nDrücken Sie eine Taste, um fortzufahren..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") }
 
 # --------------------------
 # Installationsfunktionen
@@ -545,20 +412,11 @@ function Install-IIS {
         if (-not (Get-WindowsFeature -Name Web-Server).Installed) {
             Install-WindowsFeature -Name Web-Server -IncludeManagementTools | Out-Null
             Write-Host "IIS wurde installiert." -ForegroundColor Green
-        } else {
-            Write-Host "IIS ist bereits installiert." -ForegroundColor Green
-        }
+        } else { Write-Host "IIS ist bereits installiert." -ForegroundColor Green }
 
         $index = "C:\inetpub\wwwroot\index.html"
-        if (-not (Test-Path $index)) {
-            "Willkommen $(Get-Date)" | Out-File $index -Encoding utf8
-            Write-Host "IIS-Startseite erstellt." -ForegroundColor Green
-        } else {
-            Write-Host "IIS-Startseite existiert bereits." -ForegroundColor Green
-        }
-    } catch {
-        Write-Warning "IIS-Setup Problem: $($_.Exception.Message)"
-    }
+        if (-not (Test-Path $index)) { "Willkommen $(Get-Date)" | Out-File $index -Encoding utf8; Write-Host "IIS-Startseite erstellt." -ForegroundColor Green } else { Write-Host "IIS-Startseite existiert bereits." -ForegroundColor Green }
+    } catch { Write-Warning "IIS-Setup Problem: $($_.Exception.Message)" }
     Pause
 }
 
@@ -566,23 +424,10 @@ function Install-RSAT {
     Write-Host "`n=== RSAT Installation ===" -ForegroundColor Cyan
     try {
         $adCap = Get-WindowsCapability -Online | Where-Object { $_.Name -like "Rsat.ActiveDirectory.DS-LDS.Tools*" } | Select-Object -First 1
-        if ($adCap -and $adCap.State -ne "Installed") {
-            Add-WindowsCapability -Online -Name $adCap.Name -ErrorAction Stop | Out-Null
-            Write-Host "RSAT AD DS/LDAP Tools installiert." -ForegroundColor Green
-        } else {
-            Write-Host "RSAT AD Tools sind bereits installiert." -ForegroundColor Green
-        }
-        
-        # Prüfen ob ActiveDirectory Modul verfügbar ist
-        if (Get-Module -ListAvailable -Name ActiveDirectory) {
-            Import-Module ActiveDirectory -Force
-            Write-Host "ActiveDirectory Modul importiert." -ForegroundColor Green
-        } else {
-            Write-Warning "ActiveDirectory Modul nicht verfügbar. Bitte stellen Sie sicher, dass RSAT installiert ist."
-        }
-    } catch {
-        Write-Warning "RSAT-Installation fehlgeschlagen: $($_.Exception.Message)"
-    }
+        if ($adCap -and $adCap.State -ne "Installed") { Add-WindowsCapability -Online -Name $adCap.Name -ErrorAction Stop | Out-Null; Write-Host "RSAT AD DS/LDAP Tools installiert." -ForegroundColor Green } else { Write-Host "RSAT AD Tools sind bereits installiert." -ForegroundColor Green }
+
+        if (Get-Module -ListAvailable -Name ActiveDirectory) { Import-Module ActiveDirectory -Force; Write-Host "ActiveDirectory Modul importiert." -ForegroundColor Green } else { Write-Warning "ActiveDirectory Modul nicht verfügbar. Bitte stellen Sie sicher, dass RSAT installiert ist." }
+    } catch { Write-Warning "RSAT-Installation fehlgeschlagen: $($_.Exception.Message)" }
     Pause
 }
 
@@ -590,150 +435,101 @@ function Install-OpenSSH {
     Write-Host "`n=== OpenSSH-Server Installation ===" -ForegroundColor Cyan
     try {
         $cap = Get-WindowsCapability -Online | Where-Object { $_.Name -like "OpenSSH.Server*" } | Select-Object -First 1
-        if ($cap -and $cap.State -ne "Installed") {
-            Add-WindowsCapability -Online -Name $cap.Name -ErrorAction Stop | Out-Null
-            Write-Host "OpenSSH-Server installiert." -ForegroundColor Green
-        } else {
-            Write-Host "OpenSSH-Server ist bereits installiert." -ForegroundColor Green
-        }
-        # Dienst aktivieren und starten
+        if ($cap -and $cap.State -ne "Installed") { Add-WindowsCapability -Online -Name $cap.Name -ErrorAction Stop | Out-Null; Write-Host "OpenSSH-Server installiert." -ForegroundColor Green } else { Write-Host "OpenSSH-Server ist bereits installiert." -ForegroundColor Green }
         Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
         Start-Service -Name sshd -ErrorAction SilentlyContinue
         Write-Host "sshd Dienst aktiviert/gestartet (falls vorhanden)." -ForegroundColor Green
-    } catch {
-        Write-Warning "OpenSSH-Installation fehlgeschlagen: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "OpenSSH-Installation fehlgeschlagen: $($_.Exception.Message)" }
     Pause
 }
 
 function Install-SNMP {
     Write-Host "`n=== SNMP-Client Installation ===" -ForegroundColor Cyan
     try {
-        # Windows 10/11 & Server (Capabilities)
         $cap = Get-WindowsCapability -Online | Where-Object { $_.Name -like "SNMP.Client*" } | Select-Object -First 1
         if ($cap) {
-            if ($cap.State -ne "Installed") {
-                Add-WindowsCapability -Online -Name $cap.Name -ErrorAction Stop | Out-Null
-                Write-Host "SNMP-Client installiert." -ForegroundColor Green
-            } else {
-                Write-Host "SNMP-Client ist bereits installiert." -ForegroundColor Green
-            }
+            if ($cap.State -ne "Installed") { Add-WindowsCapability -Online -Name $cap.Name -ErrorAction Stop | Out-Null; Write-Host "SNMP-Client installiert." -ForegroundColor Green } else { Write-Host "SNMP-Client ist bereits installiert." -ForegroundColor Green }
         } else {
-            # Fallback für ältere Server-Editionen
-            if (-not (Get-WindowsFeature -Name SNMP-Services).Installed) {
-                Install-WindowsFeature -Name SNMP-Services | Out-Null
-                Write-Host "SNMP-Services installiert." -ForegroundColor Green
-            } else {
-                Write-Host "SNMP-Services sind bereits installiert." -ForegroundColor Green
-            }
+            if (-not (Get-WindowsFeature -Name SNMP-Services).Installed) { Install-WindowsFeature -Name SNMP-Services | Out-Null; Write-Host "SNMP-Services installiert." -ForegroundColor Green } else { Write-Host "SNMP-Services sind bereits installiert." -ForegroundColor Green }
         }
-    } catch {
-        Write-Warning "SNMP-Installation fehlgeschlagen: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "SNMP-Installation fehlgeschlagen: $($_.Exception.Message)" }
     Pause
 }
 
 function Install-Requirements {
     Write-Host "`n=== Voraussetzungen installieren ===" -ForegroundColor Cyan
     try {
-        # TLS 1.2 erzwingen
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        # NuGet & PowerShellGet aktualisieren
-        if (-not (Get-PackageProvider -ListAvailable | Where-Object Name -eq "NuGet")) {
-            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop | Out-Null
-        }
+        if (-not (Get-PackageProvider -ListAvailable | Where-Object Name -eq "NuGet")) { Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop | Out-Null }
         Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted -ErrorAction SilentlyContinue
         Write-Host "Grundlagen aktualisiert." -ForegroundColor Green
-    } catch {
-        Write-Warning "Voraussetzungen konnten nicht vollständig installiert werden: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "Voraussetzungen konnten nicht vollständig installiert werden: $($_.Exception.Message)" }
     Pause
 }
 
 # --------------------------
-# Active Directory – Menü-Funktionen (Basis)
+# Active Directory – Basis
 # --------------------------
 function New-ADUser {
     try {
-        if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-            Write-Warning "ActiveDirectory-Modul nicht vorhanden. Bitte RSAT installieren."
-            Pause; return
-        }
+        if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) { Write-Warning "ActiveDirectory-Modul nicht vorhanden. Bitte RSAT installieren."; Pause; return }
         Import-Module ActiveDirectory -ErrorAction Stop
 
-        $sam = Read-Host "SAM-AccountName (z.B. m.mueller)"
+        $sam   = Read-Host "SAM-AccountName (z.B. m.mueller)"
         $given = Read-Host "Vorname"
-        $sn = Read-Host "Nachname"
-        $ou = Read-Host "OU (LDAP-Pfad, z.B. OU=Users,DC=contoso,DC=local)"
-        $pwd = Read-Host "Initialpasswort" -AsSecureString
+        $sn    = Read-Host "Nachname"
+        $ou    = Read-Host "OU (LDAP-Pfad, z.B. OU=Users,DC=contoso,DC=local)"
+        $userPwd   = Read-Host "Initialpasswort" -AsSecureString
 
         if (-not $sam -or -not $given -or -not $sn -or -not $ou) { Write-Warning "Eingaben unvollständig."; Pause; return }
 
-        New-ADUser -Name "$given $sn" -SamAccountName $sam -GivenName $given -Surname $sn -Path $ou -AccountPassword $pwd -Enabled $true
+        New-ADUser -Name "$given $sn" -SamAccountName $sam -GivenName $given -Surname $sn -Path $ou -AccountPassword $userPwd -Enabled $true
         Write-Host "Benutzer '$sam' angelegt." -ForegroundColor Green
-    } catch {
-        Write-Warning "Fehler beim Anlegen des Benutzers: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "Fehler beim Anlegen des Benutzers: $($_.Exception.Message)" }
     Pause
 }
 
 function New-ADGroup {
     try {
-        if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-            Write-Warning "ActiveDirectory-Modul nicht vorhanden. Bitte RSAT installieren."
-            Pause; return
-        }
+        if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) { Write-Warning "ActiveDirectory-Modul nicht vorhanden. Bitte RSAT installieren."; Pause; return }
         Import-Module ActiveDirectory -ErrorAction Stop
 
         $name = Read-Host "Gruppenname"
-        $ou = Read-Host "OU (LDAP-Pfad, z.B. OU=Groups,DC=contoso,DC=local)"
+        $ou   = Read-Host "OU (LDAP-Pfad, z.B. OU=Groups,DC=contoso,DC=local)"
         if (-not $name -or -not $ou) { Write-Warning "Eingaben unvollständig."; Pause; return }
 
         New-ADGroup -Name $name -GroupScope Global -GroupCategory Security -Path $ou
         Write-Host "Gruppe '$name' angelegt." -ForegroundColor Green
-    } catch {
-        Write-Warning "Fehler beim Anlegen der Gruppe: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "Fehler beim Anlegen der Gruppe: $($_.Exception.Message)" }
     Pause
 }
 
 function New-ADUserWithGroup {
     try {
-        if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-            Write-Warning "ActiveDirectory-Modul nicht vorhanden. Bitte RSAT installieren."
-            Pause; return
-        }
+        if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) { Write-Warning "ActiveDirectory-Modul nicht vorhanden. Bitte RSAT installieren."; Pause; return }
         Import-Module ActiveDirectory -ErrorAction Stop
 
-        $sam = Read-Host "SAM-AccountName"
-        $given = Read-Host "Vorname"
-        $sn = Read-Host "Nachname"
-        $ouUser = Read-Host "OU für Benutzer (LDAP-Pfad)"
+        $sam     = Read-Host "SAM-AccountName"
+        $given   = Read-Host "Vorname"
+        $sn      = Read-Host "Nachname"
+        $ouUser  = Read-Host "OU für Benutzer (LDAP-Pfad)"
         $ouGroup = Read-Host "OU für Gruppe (LDAP-Pfad)"
-        $grp = Read-Host "Gruppenname"
-        $pwd = Read-Host "Initialpasswort" -AsSecureString
+        $grp     = Read-Host "Gruppenname"
+        $userPwd     = Read-Host "Initialpasswort" -AsSecureString
 
         if (-not $sam -or -not $given -or -not $sn -or -not $ouUser -or -not $ouGroup -or -not $grp) { Write-Warning "Eingaben unvollständig."; Pause; return }
 
-        # Gruppe sicherstellen
-        if (-not (Get-ADGroup -Filter "Name -eq '$grp'" -ErrorAction SilentlyContinue)) {
-            New-ADGroup -Name $grp -GroupScope Global -GroupCategory Security -Path $ouGroup | Out-Null
-            Write-Host "Gruppe '$grp' angelegt." -ForegroundColor Green
-        }
+        if (-not (Get-ADGroup -Filter "Name -eq '$grp'" -ErrorAction SilentlyContinue)) { New-ADGroup -Name $grp -GroupScope Global -GroupCategory Security -Path $ouGroup | Out-Null; Write-Host "Gruppe '$grp' angelegt." -ForegroundColor Green }
 
-        # Benutzer anlegen
-        New-ADUser -Name "$given $sn" -SamAccountName $sam -GivenName $given -Surname $sn -Path $ouUser -AccountPassword $pwd -Enabled $true
+        New-ADUser -Name "$given $sn" -SamAccountName $sam -GivenName $given -Surname $sn -Path $ouUser -AccountPassword $userPwd -Enabled $true
         Add-ADGroupMember -Identity $grp -Members $sam
         Write-Host "Benutzer '$sam' angelegt und zu '$grp' hinzugefügt." -ForegroundColor Green
-    } catch {
-        Write-Warning "Fehler bei Benutzer- und Gruppenerstellung: $($_.Exception.Message)"
-    }
+    } catch { Write-Warning "Fehler bei Benutzer- und Gruppenerstellung: $($_.Exception.Message)" }
     Pause
 }
 
 # --------------------------
-# Hauptmenü Funktion
+# Untermenüs
 # --------------------------
 function Show-InstallMenu {
     do {
@@ -745,9 +541,9 @@ function Show-InstallMenu {
         Write-Host "4: SNMP-Client installieren"
         Write-Host "5: Sysinternals Tools starten"
         Write-Host "Q: Zurueck zum Hauptmenue"
-        
+
         $choice = Read-Host "`nIhre Auswahl"
-        
+
         switch ($choice) {
             "1" { Install-IIS }
             "2" { Install-RSAT }
@@ -755,10 +551,7 @@ function Show-InstallMenu {
             "4" { Install-SNMP }
             "5" { Show-SysinternalsMenu }
             "Q" { return }
-            default {
-                Write-Warning "Ungueltige Auswahl"
-                Pause
-            }
+            default { Write-Warning "Ungueltige Auswahl"; Pause }
         }
     } while ($true)
 }
@@ -773,9 +566,9 @@ function Show-SysinternalsMenu {
         Write-Host "4: Process Monitor starten"
         Write-Host "5: BGInfo starten"
         Write-Host "Q: Zurueck"
-        
+
         $choice = Read-Host "`nIhre Auswahl"
-        
+
         switch ($choice) {
             "1" { Start-SysinternalTool -ExeName "procexp.exe" }
             "2" { Start-SysinternalTool -ExeName "tcpview.exe" }
@@ -783,10 +576,7 @@ function Show-SysinternalsMenu {
             "4" { Start-SysinternalTool -ExeName "procmon.exe" }
             "5" { Start-SysinternalTool -ExeName "bginfo.exe" }
             "Q" { return }
-            default {
-                Write-Warning "Ungueltige Auswahl"
-                Pause
-            }
+            default { Write-Warning "Ungueltige Auswahl"; Pause }
         }
     } while ($true)
 }
@@ -799,18 +589,15 @@ function Show-NetworkMenu {
         Write-Host "2: VLAN-Konfiguration"
         Write-Host "3: Netzwerkadapter anzeigen (mit Details)"
         Write-Host "Q: Zurueck"
-        
+
         $choice = Read-Host "`nIhre Auswahl"
-        
+
         switch ($choice) {
             "1" { Set-NetworkConfig }
             "2" { Set-VlanTag }
             "3" { Show-NetworkAdapters; Pause }
             "Q" { return }
-            default {
-                Write-Warning "Ungueltige Auswahl"
-                Pause
-            }
+            default { Write-Warning "Ungueltige Auswahl"; Pause }
         }
     } while ($true)
 }
@@ -823,22 +610,22 @@ function Show-ADMenu {
         Write-Host "2: Gruppe anlegen"
         Write-Host "3: Benutzer und Gruppe anlegen"
         Write-Host "Q: Zurueck"
-        
+
         $choice = Read-Host "`nIhre Auswahl"
-        
+
         switch ($choice) {
             "1" { New-ADUser }
             "2" { New-ADGroup }
             "3" { New-ADUserWithGroup }
             "Q" { return }
-            default {
-                Write-Warning "Ungueltige Auswahl"
-                Pause
-            }
+            default { Write-Warning "Ungueltige Auswahl"; Pause }
         }
     } while ($true)
 }
 
+# --------------------------
+# Hauptmenü
+# --------------------------
 function Show-MainMenu {
     do {
         Clear-Host
@@ -854,31 +641,25 @@ function Show-MainMenu {
         Write-Host "8: Drucker installieren (nach Raum)"
         Write-Host "9: Voraussetzungen installieren"
         Write-Host "Q: Beenden"
-        
+
         $choice = Read-Host "`nIhre Auswahl"
-        
+
         switch ($choice) {
             "1" { Show-SystemInfo; Pause }
             "2" { Show-InstallMenu }
             "3" { Test-NetworkAndServices; Pause }
-            "4" { Run-Updates; Pause }
+            "4" { Invoke-Updates; Pause }
             "5" { Show-ADMenu }
             "6" { Show-SystemErrors; Pause }
             "7" { Show-NetworkMenu }
             "8" { Install-PrinterByRoom }
             "9" { Install-Requirements }
-            "Q" { 
-                Write-Host "Admin-Toolkit wird beendet." -ForegroundColor Cyan
-                exit 
-            }
-            default {
-                Write-Warning "Ungueltige Auswahl"
-                Pause
-            }
+            "Q" { Write-Host "Admin-Toolkit wird beendet." -ForegroundColor Cyan; exit }
+            default { Write-Warning "Ungueltige Auswahl"; Pause }
         }
     } while ($true)
 }
 
 # ----- Skriptstart -----
-# Aufruf des Hauptmenüs, damit das Skript beim Start läuft
 Show-MainMenu
+
